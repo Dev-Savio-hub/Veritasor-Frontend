@@ -25,14 +25,16 @@ export function getAttestationChartGeometry(
   chartWidth = 640,
   padding = 12,
 ): AttestationChartGeometry {
-  const count = Math.max(0, Math.floor(bucketCount));
-  const bandWidth = Math.max(0, chartWidth - padding * 2) / Math.max(count, 1);
+  const count = Number.isFinite(bucketCount) ? Math.max(0, Math.floor(bucketCount)) : 0;
+  const safeWidth = Number.isFinite(chartWidth) ? Math.max(0, chartWidth) : 0;
+  const safePadding = Number.isFinite(padding) ? Math.max(0, padding) : 0;
+  const bandWidth = Math.max(0, safeWidth - safePadding * 2) / Math.max(count, 1);
   const barWidth = count === 0 ? 0 : Math.min(48, bandWidth * 0.7);
 
   return {
     barWidth,
     positions: Array.from({ length: count }, (_, index) =>
-      padding + index * bandWidth + (bandWidth - barWidth) / 2,
+      safePadding + index * bandWidth + (bandWidth - barWidth) / 2,
     ),
   };
 }
@@ -40,7 +42,7 @@ export function getAttestationChartGeometry(
 export function getAttestationChartLabelIndices(labels: string[], centers: number[]): number[] {
   const candidates = labels
     .map((label, index) => ({ index, center: centers[index], width: label.length * 6 }))
-    .filter(({ center }) => center !== undefined);
+    .filter(({ center }) => Number.isFinite(center));
   if (candidates.length <= 1) return candidates.map(({ index }) => index);
 
   const selected = [candidates[0]];
