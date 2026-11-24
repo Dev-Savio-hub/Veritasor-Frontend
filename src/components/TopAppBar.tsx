@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import LocalePicker from "./LocalePicker/LocalePicker";
 import { useEnvironment } from "./EnvironmentContext";
 import ConfirmDialog from "./ConfirmDialog";
+import NotificationsDropdown from "./NotificationsDropdown";
 import { ROUTES } from "../routes";
 import { useOptionalWorkspace } from "../state/workspace";
 
@@ -940,6 +941,8 @@ export default function TopAppBar({
             }}
             onClose={() => setConfirmMainnetOpen(false)}
           />
+
+          <NotificationsDropdown />
 
           <div style={{ position: "relative" }}>
             <button

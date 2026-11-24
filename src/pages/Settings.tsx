@@ -15,6 +15,12 @@ import DensityToggle from '../components/DensityToggle'
 import DirtyStateBanner from '../components/DirtyStateBanner'
 import { useDirtyForm, type SaveStatus } from '../hooks/useDirtyForm'
 import { validatePassword } from '../utils/passwordPolicy'
+import {
+  NOTIFICATION_CATEGORIES,
+  CHANNEL_META,
+  useNotifications,
+  type NotificationChannel,
+} from '../store/notificationsStore'
 import { useOptionalWorkspace } from '../state/workspace'
 
 // Tab definitions ordered by frequency of use
@@ -305,208 +311,186 @@ function ProfilePanel() {
   );
 }
 
-type NotificationChannel = "email" | "inapp" | "webhook";
-
-interface NotificationCategory {
-  id: string;
-  title: string;
-  description: string;
-  defaults: Record<NotificationChannel, boolean>;
-}
-
-const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
-  {
-    id: "attestation-completed",
-    title: "Attestation completed",
-    description:
-      "A revenue attestation run finished successfully with a valid Merkle root.",
-    defaults: { email: true, inapp: true, webhook: true },
-  },
-  {
-    id: "attestation-failed",
-    title: "Attestation failed",
-    description:
-      "An attestation run timed out, returned an error, or produced invalid evidence.",
-    defaults: { email: true, inapp: true, webhook: true },
-  },
-  {
-    id: "source-connected",
-    title: "Revenue source connected",
-    description:
-      "A new data source (Stripe, QuickBooks, Plaid, etc.) was linked to the workspace.",
-    defaults: { email: true, inapp: true, webhook: false },
-  },
-  {
-    id: "source-disconnected",
-    title: "Revenue source disconnected",
-    description:
-      "A previously connected data source lost authorization or was removed by a team member.",
-    defaults: { email: true, inapp: true, webhook: true },
-  },
-  {
-    id: "invoice-generated",
-    title: "Billing invoice generated",
-    description:
-      "A new subscription invoice is ready. Receipts are also available in Billing.",
-    defaults: { email: true, inapp: false, webhook: false },
-  },
-  {
-    id: "payment-failed",
-    title: "Payment failed",
-    description:
-      "A subscription charge could not be processed. Service may be interrupted.",
-    defaults: { email: true, inapp: true, webhook: true },
-  },
-  {
-    id: "team-invite",
-    title: "Team member invite or removal",
-    description:
-      "Someone was invited to the workspace, accepted, or was removed by an admin.",
-    defaults: { email: true, inapp: true, webhook: false },
-  },
-  {
-    id: "api-key-rotated",
-    title: "API key rotated or revoked",
-    description:
-      "A workspace API key was rotated, revoked, or is about to expire.",
-    defaults: { email: true, inapp: true, webhook: true },
-  },
-  {
-    id: "security-alert",
-    title: "Security alerts",
-    description:
-      "Sign-in from a new device, MFA method changes, or recovery code usage.",
-    defaults: { email: true, inapp: true, webhook: true },
-  },
-];
-
-const CHANNEL_META: Record<
-  NotificationChannel,
-  { label: string; icon: string; help: string }
-> = {
-  email: {
-    label: "Email",
-    icon: "✉",
-    help: "Delivered to your verified inbox with reply-to support.",
-  },
-  inapp: {
-    label: "In-app",
-    icon: "🔔",
-    help: "Shown in the product bell menu and marked as read/unread.",
-  },
-  webhook: {
-    label: "Webhook",
-    icon: "🔗",
-    help: "POST event payload to the configured endpoint URL.",
-  },
-};
-
-function buildInitialPrefs(): Record<
-  string,
-  Record<NotificationChannel, boolean>
-> {
-  const prefs: Record<string, Record<NotificationChannel, boolean>> = {};
-  for (const cat of NOTIFICATION_CATEGORIES) {
-    prefs[cat.id] = { ...cat.defaults };
-  }
-  return prefs;
-}
+const NOTIFICATION_CHANNELS: NotificationChannel[] = ["email", "inapp", "webhook"];
 
 function NotificationsPanel() {
   const registry = useDirtyRegistry();
-  const notificationItems = [
-    "Attestation completed",
-    "Attestation failed",
-    "New revenue source connected",
-    "Billing invoice generated",
-  ] as const;
-  type NotifItem = (typeof notificationItems)[number];
+  const { preferences, setPreference, setPreferences, resetPreferences } =
+    useNotifications();
+  const initialSnapshotRef = useRef(preferences);
+  const [isDirty, setIsDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
 
-  const initialNotifs: Record<NotifItem, boolean> = {
-    "Attestation completed": true,
-    "Attestation failed": true,
-    "New revenue source connected": true,
-    "Billing invoice generated": true,
-  };
+  const save = useCallback(async () => {
+    setSaveStatus("saving");
+    initialSnapshotRef.current = preferences;
+    setIsDirty(false);
+    setSaveStatus("saved");
+    setLastSavedAt(new Date());
+  }, [preferences]);
 
-  const form = useDirtyForm({
-    storageKey: "veritasor_settings_notifications_draft",
-    initialValues: initialNotifs,
-    autoSave: true,
-    autoSaveIntervalMs: 2500,
-  });
+  const reset = useCallback(() => {
+    setPreferences(initialSnapshotRef.current);
+    setIsDirty(false);
+    setSaveStatus("idle");
+  }, [setPreferences]);
 
   useEffect(() => {
     registry.register("notifications", {
-      isDirty: form.isDirty,
-      saveStatus: form.saveStatus,
-      lastSavedAt: form.lastSavedAt,
-      save: form.save,
-      reset: form.reset,
+      isDirty,
+      saveStatus,
+      lastSavedAt,
+      save,
+      reset,
     });
     return () => registry.unregister("notifications");
   }, [
     registry.register,
     registry.unregister,
-    form.isDirty,
-    form.saveStatus,
-    form.lastSavedAt,
-    form.save,
-    form.reset,
+    isDirty,
+    saveStatus,
+    lastSavedAt,
+    save,
+    reset,
   ]);
 
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
       <DirtyStateBanner
-        isDirty={form.isDirty}
-        saveStatus={form.saveStatus}
-        lastSavedAt={form.lastSavedAt}
-        onSave={form.save}
-        onDiscard={form.reset}
+        isDirty={isDirty}
+        saveStatus={saveStatus}
+        lastSavedAt={lastSavedAt}
+        onSave={save}
+        onDiscard={reset}
         formLabel="Notifications"
       />
-      <div>
-        <h2>Notifications</h2>
-        <p style={{ color: "var(--muted)" }}>
-          Choose which events trigger email notifications.
-        </p>
-        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
-          <legend className="sr-only">Email notification preferences</legend>
-          <ul
-            style={{
-              listStyle: "none",
-              padding: 0,
-              display: "grid",
-              gap: "0.75rem",
-              maxWidth: 480,
-            }}
-          >
-            {notificationItems.map((item) => (
-              <li
-                key={item}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap" }}>
+        <div>
+          <h2>Notifications</h2>
+          <p style={{ color: "var(--muted)" }}>
+            Choose which events trigger email, in-app bell, and webhook notifications.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            resetPreferences();
+            setIsDirty(true);
+            setSaveStatus("dirty");
+          }}
+          style={{
+            padding: "0.45rem 0.85rem",
+            borderRadius: 8,
+            border: "1px solid var(--border)",
+            background: "transparent",
+            color: "var(--text)",
+            cursor: "pointer",
+            fontSize: "0.85rem",
+            fontWeight: 600,
+          }}
+        >
+          Reset to defaults
+        </button>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table
+          style={{
+            width: "100%",
+            borderCollapse: "collapse",
+            minWidth: 480,
+          }}
+        >
+          <thead>
+            <tr>
+              <th
+                scope="col"
                 style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "0.75rem",
+                  textAlign: "left",
+                  padding: "0.65rem 0.75rem",
+                  borderBottom: "1px solid var(--border)",
+                  fontSize: "0.78rem",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.06em",
+                  color: "var(--muted)",
                 }}
               >
-                <input
-                  id={`notif-${item}`}
-                  type="checkbox"
-                  checked={form.values[item]}
-                  onChange={(e) => form.setField(item, e.target.checked)}
-                  style={{ width: 16, height: 16 }}
-                />
-                <label
-                  htmlFor={`notif-${item}`}
-                  style={{ fontSize: "0.95rem" }}
+                Event
+              </th>
+              {NOTIFICATION_CHANNELS.map((ch) => (
+                <th
+                  key={ch}
+                  scope="col"
+                  title={CHANNEL_META[ch].help}
+                  style={{
+                    textAlign: "center",
+                    padding: "0.65rem 0.75rem",
+                    borderBottom: "1px solid var(--border)",
+                    fontSize: "0.78rem",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                    color: "var(--muted)",
+                    whiteSpace: "nowrap",
+                  }}
                 >
-                  {item}
-                </label>
-              </li>
+                  <span aria-hidden="true" style={{ marginRight: "0.3rem" }}>
+                    {CHANNEL_META[ch].icon}
+                  </span>
+                  {CHANNEL_META[ch].label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {NOTIFICATION_CATEGORIES.map((cat) => (
+              <tr
+                key={cat.id}
+                style={{ borderBottom: "1px solid var(--border)" }}
+              >
+                <td style={{ padding: "0.75rem" }}>
+                  <div style={{ fontWeight: 600, fontSize: "0.92rem" }}>
+                    {cat.title}
+                  </div>
+                  <div
+                    style={{
+                      fontSize: "0.82rem",
+                      color: "var(--muted)",
+                      marginTop: "0.15rem",
+                    }}
+                  >
+                    {cat.description}
+                  </div>
+                </td>
+                {NOTIFICATION_CHANNELS.map((ch) => {
+                  const checked = preferences[cat.id]?.[ch] ?? cat.defaults[ch];
+                  return (
+                    <td
+                      key={ch}
+                      style={{
+                        textAlign: "center",
+                        padding: "0.75rem",
+                        verticalAlign: "middle",
+                      }}
+                    >
+                      <input
+                        id={`notif-${cat.id}-${ch}`}
+                        type="checkbox"
+                        checked={checked}
+                        aria-label={`${cat.title} — ${CHANNEL_META[ch].label}`}
+                        onChange={(e) => {
+                          setPreference(cat.id, ch, e.target.checked);
+                          setIsDirty(true);
+                          setSaveStatus("dirty");
+                        }}
+                        style={{ width: 16, height: 16, cursor: "pointer" }}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
             ))}
-          </ul>
-        </fieldset>
+          </tbody>
+        </table>
       </div>
     </div>
   );

@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { ToastSeverity } from './toastRules';
+import {
+  addNotification,
+  type NotificationCategoryId,
+} from '../store/notificationsStore';
 import { newId } from '../utils/secureRandom';
 
 export type ToastType = ToastSeverity;
@@ -32,6 +36,8 @@ interface ToastContextValue {
     onUndo?: () => void,
     undoLabel?: string,
     groupId?: string,
+    count?: number,
+    category?: NotificationCategoryId,
   ) => string;
   removeToast: (id: string) => void;
   /** Remove the most recent (top) toast — bound to the Escape key. */
@@ -66,12 +72,21 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       undoLabel?: string,
       groupId?: string,
       count?: number,
+      category?: NotificationCategoryId,
     ) => {
       const id = newId('toast-');
       setToasts((prev) => [
         ...prev,
         { id, message, type, duration, onUndo, undoLabel, groupId, count },
       ]);
+      if (category) {
+        addNotification({
+          category,
+          title: message,
+          message,
+          severity: type,
+        });
+      }
       return id;
     },
     [],
